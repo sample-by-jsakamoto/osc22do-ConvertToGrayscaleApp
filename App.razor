@@ -1,0 +1,110 @@
+﻿@inject IJSRuntime JSRuntime
+
+<h1>Convert @SX x @SY pixels to gray scale</h1>
+
+<div style="display: flex;justify-content: space-around;">
+
+    <div style="text-align: center;">
+        <h2>by .NET</h2>
+        <Canvas @ref="_CanvasA" width="@(SX+"px")" height="@(SY+"px")" style="width: 360px;" />
+        <button @onclick="ConvertToGrayScaleByDotNetAsync">Convert</button>
+        @if (_ConvertingTimeA.HasValue)
+        {
+            <div>
+                ⏱️It took @(_ConvertingTimeA.Value.TotalSeconds.ToString("#,0.00")) sec.
+            </div>
+        }
+    </div>
+
+    <div style="text-align: center;">
+        <h2>by C</h2>
+        <Canvas @ref="_CanvasB" width="@(SX+"px")" height="@(SY+"px")" style="width: 360px;" />
+        <button @onclick="ConvertToGrayScaleByCAsync">Convert</button>
+        @if (_ConvertingTimeB.HasValue)
+        {
+            <div>
+                ⏱️It took @(_ConvertingTimeB.Value.TotalSeconds.ToString("#,0.00")) sec.
+            </div>
+        }
+    </div>
+</div>
+
+@if (_Converting)
+{
+    <div class="converting">Converting...</div>
+    <link rel="stylesheet"
+    href="data:text/css,.converting%7Bfont-family%3A'Franklin%20Gothic%20Medium'%2C'Arial%20Narrow'%2CArial%2Csans-serif%3Bcolor%3A%2388a%3Bfont-size%3A18px%3Btext-align%3Acenter%3Bwidth%3A150px%3Bheight%3A150px%3Bposition%3Afixed%3Btop%3A0%3Bbottom%3A0%3Bleft%3A0%3Bright%3A0%3Bmargin%3Aauto%7D.converting%3A%3Aafter%7Bcontent%3A''%3Bborder%3Asolid%2010px%3Bborder-color%3A%2388a%20%23eee%20%23eee%3Bborder-radius%3A60px%3Bposition%3Aabsolute%3Bwidth%3A60px%3Bheight%3A60px%3Btop%3A0%3Bbottom%3A0%3Bleft%3A0%3Bright%3A0%3Bmargin%3Aauto%3Banimation%3Arotation%201.5s%20linear%200s%20infinite%7D%40keyframes%20rotation%7B0%25%7Btransform%3Arotate(45deg)%7D100%25%7Btransform%3Arotate(405deg)%7D%7D" />
+}
+
+@code {
+    const int SX = 4032;
+
+    const int SY = 2016;
+
+    private Canvas? _CanvasA;
+
+    private TimeSpan? _ConvertingTimeA;
+
+    private Canvas? _CanvasB;
+
+    private TimeSpan? _ConvertingTimeB;
+
+    private bool _Converting = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await InitializeImageAsync(_CanvasA);
+            await InitializeImageAsync(_CanvasB);
+        }
+    }
+
+    private async Task ConvertToGrayScaleByDotNetAsync()
+    {
+        _ConvertingTimeA = null;
+        var elapsed = await ConvertToGrayScaleAsync(_CanvasA, ConvertToGrayScaleByDotNet);
+        _ConvertingTimeA = elapsed;
+    }
+
+    [DllImport("GrayScaleConverterByC")]
+    static extern void convertToGrayScaleByC(int sx, int sy, byte[] pixelData);
+
+    private async Task ConvertToGrayScaleByCAsync()
+    {
+        _ConvertingTimeB = null;
+        var elapsed = await ConvertToGrayScaleAsync(_CanvasB, convertToGrayScaleByC);
+        _ConvertingTimeB = elapsed;
+    }
+
+
+    private async ValueTask<Context2D> InitializeImageAsync(Canvas? canvas)
+    {
+        var context = await canvas!.GetContext2DAsync();
+        await context.DrawImageAsync("srcImage", 0, 0);
+        return context;
+    }
+
+
+    private async ValueTask<TimeSpan> ConvertToGrayScaleAsync(Canvas? canvas, Action<int, int, byte[]> converter)
+    {
+        _Converting = true;
+        var context = await InitializeImageAsync(canvas);
+        var imageDataId = await context.GetImageDataAsync(0, 0, SX, SY);
+        var pixelData = await JSRuntime.InvokeAsync<byte[]>("getPixelData", imageDataId);
+        await Task.Delay(10);
+
+        var stopwatch = Stopwatch.StartNew();
+
+        converter.Invoke(SX, SY, pixelData);
+
+        stopwatch.Stop();
+
+        await JSRuntime.InvokeVoidAsync("updateImageData", imageDataId, SX, SY, pixelData);
+        await context.PutImageDataAsync(imageDataId, 0, 0);
+        await JSRuntime.InvokeVoidAsync("removeImageData");
+
+        _Converting = false;
+        return stopwatch.Elapsed;
+    }
+}
