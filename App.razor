@@ -67,9 +67,6 @@
         _ConvertingTimeA = elapsed;
     }
 
-    [DllImport("GrayScaleConverterByC")]
-    static extern void convertToGrayScaleByC(int sx, int sy, byte[] pixelData);
-
     private async Task ConvertToGrayScaleByCAsync()
     {
         _ConvertingTimeB = null;
